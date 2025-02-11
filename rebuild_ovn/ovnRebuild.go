@@ -128,6 +128,6 @@ func main() {
 		}
 	}
 
-	// Step 3: Watch for pod recreation for 60 seconds
+	// Step 3: Watch for pod recreation for 120 seconds
 	watchPodRecreation(120 * time.Second)
 }
