@@ -1,3 +1,8 @@
+<<<<<<< HEAD
+=======
+# ovn-automation
+
+>>>>>>> 02e02b8 (Readme fie updated)
 # OVN Automation Script
 
 This Go program automates the process of rebuilding OVN databases and restarting OVN-related services across multiple nodes in an OpenShift cluster. It performs the following tasks for each node running `ovnkube-node`:
@@ -40,7 +45,11 @@ Run the script to automate OVN database rebuilding across all relevant nodes:
 This will:
 - Identify nodes running `ovnkube-node`
 - Execute all necessary cleanup and restart operations
+<<<<<<< HEAD
 - Monitor pod recreation for 120 seconds
+=======
+- Monitor pod recreation for 60 seconds
+>>>>>>> 02e02b8 (Readme fie updated)
 
 ## Troubleshooting
 
@@ -51,3 +60,7 @@ If you encounter errors, ensure:
 ## Contributions
 
 Contributions are welcome! Feel free to submit issues or pull requests to improve this automation.
+<<<<<<< HEAD
+=======
+
+>>>>>>> 02e02b8 (Readme fie updated)
