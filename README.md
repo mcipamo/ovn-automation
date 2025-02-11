@@ -40,7 +40,7 @@ Run the script to automate OVN database rebuilding across all relevant nodes:
 This will:
 - Identify nodes running `ovnkube-node`
 - Execute all necessary cleanup and restart operations
-- Monitor pod recreation for 60 seconds
+- Monitor pod recreation for 120 seconds
 
 ## Troubleshooting
 
