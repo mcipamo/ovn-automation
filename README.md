@@ -43,8 +43,6 @@ This will:
 - Identify nodes running `ovnkube-node`
 - Execute all necessary cleanup and restart operations
 - Monitor pod recreation for 120 seconds
-=======
-- Monitor pod recreation for 60 seconds
 
 ## Troubleshooting
 
