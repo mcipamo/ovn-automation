@@ -97,7 +97,8 @@ func waitForPodRecreation(kubeClient client.Client, nodeName string) error {
 
 func executeCommandOnNode(kubeClient client.Client, nodeName string, commands []string) error {
 	log.Printf("Executing commands on node %s", nodeName)
-	// Here the remote execution commands
+	// Aquí iría la implementación de ejecución remota
 	time.Sleep(2 * time.Second)
 	return nil
 }
+
