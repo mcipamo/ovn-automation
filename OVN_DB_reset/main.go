@@ -7,99 +7,93 @@ import (
 	"log"
 	"time"
 
-	"github.com/openshift/osdctl/pkg/k8s"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
+)
+
+const (
+	daemonsetName      = "ovn-db-reset"
+	daemonsetNamespace = "openshift-ovn-kubernetes"
 )
 
 func main() {
-	// Parameters to be passed via command line
-	clusterID := flag.String("cluster-id", "", "OpenShift ClusterID")
-	reason := flag.String("reason", "OVN DB Reset", "Reason to perform the action")
+	// Read command-line parameters
+	kubeconfig := flag.String("kubeconfig", "", "Path to the kubeconfig file")
 	flag.Parse()
 
-	// Validate entry
-	if *clusterID == "" {
-		log.Fatal("Error: --cluster-id is required")
-	}
-
-	if *reason == "" {
-		log.Fatal("Error: reason is required")
-	}
-
-	// Create KubeClient as backplane-cluster-admin
-	kubeClient, err := createKubeClient(*clusterID, *reason)
+	// Create Kubernetes client
+	config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
 	if err != nil {
-		log.Fatalf("Error getting Kubernetes client: %v", err)
+		log.Fatalf("Error creating Kubeconfig: %v", err)
 	}
-
-	// Get nodes running OVN
-	nodes, err := getNodesRunningOVN(kubeClient)
+	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		log.Fatalf("Error getting OVN nodes: %v", err)
+		log.Fatalf("Error creating Kubernetes client: %v", err)
 	}
 
-	// Iterate each node
-	for _, node := range nodes {
-		log.Printf("Processing node: %s", node.Name)
-
-		if err := cleanOVNDBAndRestartServices(node); err != nil {
-			log.Printf("Error cleaning OVN DB in %s: %v", node.Name, err)
-			continue
-		}
-
-		if err := deleteOVNKubeNodePod(node); err != nil {
-			log.Printf("Error deleting ovnkube-node pod in %s: %v", node.Name, err)
-			continue
-		}
-
-		if err := waitForPodRecreation(node); err != nil {
-			log.Printf("Waiting for pod recreation in %s: %v", node.Name, err)
-			continue
-		}
+	// Deploy DaemonSet to clean OVN
+	if err := deployDaemonSet(clientset); err != nil {
+		log.Fatalf("Error deploying DaemonSet: %v", err)
 	}
-	log.Println("OVN database reset successfully completed!")
+
+	// Wait for the DaemonSet to complete execution
+	log.Println("Waiting for DaemonSet to complete execution...")
+	time.Sleep(30 * time.Second) // Adjust the time as needed
+
+	// Delete the DaemonSet
+	if err := deleteDaemonSet(clientset); err != nil {
+		log.Fatalf("Error deleting DaemonSet: %v", err)
+	}
+
+	log.Println("✅ OVN database reset completed successfully!")
 }
 
-// createKubeClient crea un cliente Kubernetes con privilegios de administrador
-func createKubeClient(clusterID, reason string) (client.Client, error) {
-	kubeClient, err := k8s.NewAsBackplaneClusterAdmin(clusterID, client.Options{}, reason)
-	if err != nil {
-		return nil, fmt.Errorf("backplane-cluster-admin authentication failed: %w", err)
+func deployDaemonSet(clientset *kubernetes.Clientset) error {
+	daemonSet := &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      daemonsetName,
+			Namespace: daemonsetNamespace,
+		},
+		Spec: appsv1.DaemonSetSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": daemonsetName},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"app": daemonsetName},
+				},
+				Spec: corev1.PodSpec{
+					HostPID:       true,
+					RestartPolicy: corev1.RestartPolicyNever,
+					Containers: []corev1.Container{
+						{
+							Name:  "ovn-reset",
+							Image: "registry.redhat.io/ubi9/ubi:latest",
+							SecurityContext: &corev1.SecurityContext{
+								Privileged: func(b bool) *bool { return &b }(true),
+							},
+							Command: []string{"/bin/bash", "-c", `
+								rm -f /var/lib/ovn-ic/etc/ovn*.db &&
+								systemctl restart ovs-vswitchd ovsdb-server
+							`},
+						},
+					},
+				},
+			},
+		},
 	}
-	return kubeClient, nil
-}
 
-// getNodesRunningOVN get nodes with ovnkube-node
-func getNodesRunningOVN(kubeClient client.Client) ([]corev1.Node, error) {
-	var nodeList corev1.NodeList
-	err := kubeClient.List(context.TODO(), &nodeList)
+	_, err := clientset.AppsV1().DaemonSets(daemonsetNamespace).Create(context.TODO(), daemonSet, metav1.CreateOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("error listing nodes: %w", err)
+		return fmt.Errorf("failed to create DaemonSet: %w", err)
 	}
-	return nodeList.Items, nil
-}
-
-// cleanOVNDBAndRestartServices removes OVN DB and restart Open vSwitch
-func cleanOVNDBAndRestartServices(node corev1.Node) error {
-	log.Printf("Cleaning OVN DB in node %s...", node.Name)
-	// Next implementation
-	time.Sleep(2 * time.Second)
+	log.Println("✅ DaemonSet deployed successfully!")
 	return nil
 }
 
-// deleteOVNKubeNodePod removes ovnkube-node pod on specific node
-func deleteOVNKubeNodePod(node corev1.Node) error {
-	log.Printf("Removing ovnkube-node pod in node %s...", node.Name)
-	// Next implementation
-	time.Sleep(2 * time.Second)
-	return nil
-}
-
-// waitForPodRecreation wait for ovnkube-node recreation
-func waitForPodRecreation(node corev1.Node) error {
-	log.Printf(" Waiting for pod recreatin in node %s...", node.Name)
-	// Next implementation
-	time.Sleep(5 * time.Second)
-	return nil
+func deleteDaemonSet(clientset *kubernetes.Clientset) error {
+	return clientset.AppsV1().DaemonSets(daemonsetNamespace).Delete(context.TODO(), daemonsetName, metav1.DeleteOptions{})
 }
