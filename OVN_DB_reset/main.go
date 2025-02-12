@@ -7,11 +7,11 @@ import (
 	"log"
 	"time"
 
+	"github.com/openshift/osdctl/pkg/k8s"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
 const (
@@ -20,18 +20,17 @@ const (
 )
 
 func main() {
-	// Read command-line parameters
-	kubeconfig := flag.String("kubeconfig", "", "Path to the kubeconfig file")
+	clusterID := flag.String("cluster-id", "", "OpenShift ClusterID")
+	reason := flag.String("reason", "OVN DB Reset", "Reason for the operation")
 	flag.Parse()
 
-	// Create Kubernetes client
-	config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
-	if err != nil {
-		log.Fatalf("Error creating Kubeconfig: %v", err)
+	if *clusterID == "" {
+		log.Fatal("Error: --cluster-id is required")
 	}
-	clientset, err := kubernetes.NewForConfig(config)
+
+	clientset, err := createKubeClient(*clusterID, *reason)
 	if err != nil {
-		log.Fatalf("Error creating Kubernetes client: %v", err)
+		log.Fatalf("Error getting Kubernetes client: %v", err)
 	}
 
 	// Deploy DaemonSet to clean OVN
@@ -49,6 +48,20 @@ func main() {
 	}
 
 	log.Println("✅ OVN database reset completed successfully!")
+}
+
+func createKubeClient(clusterID, reason string) (*kubernetes.Clientset, error) {
+	config, err := k8s.GetKubeConfig(clusterID, reason)
+	if err != nil {
+		return nil, fmt.Errorf("failed to authenticate as backplane-cluster-admin: %w", err)
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Kubernetes client: %w", err)
+	}
+
+	return clientset, nil
 }
 
 func deployDaemonSet(clientset *kubernetes.Clientset) error {
