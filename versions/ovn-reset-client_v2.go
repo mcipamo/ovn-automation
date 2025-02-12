@@ -59,7 +59,7 @@ func main() {
 			continue
 		}
 	}
-	log.Println("✅ OVN database reset completed successfully!")
+	log.Println(" OVN database reset completed successfully!")
 }
 
 func getNodesRunningOVN(clientset *kubernetes.Clientset) ([]corev1.Node, error) {

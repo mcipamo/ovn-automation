@@ -48,7 +48,7 @@ func main() {
 		log.Fatalf("Error deleting DaemonSet: %v", err)
 	}
 
-	log.Println("✅ OVN database reset completed successfully!")
+	log.Println(" OVN database reset completed successfully!")
 }
 
 func createKubeClient(clusterID, reason string) (*kubernetes.Clientset, error) {
@@ -104,7 +104,7 @@ func deployDaemonSet(clientset *kubernetes.Clientset) error {
 	if err != nil {
 		return fmt.Errorf("failed to create DaemonSet: %w", err)
 	}
-	log.Println("✅ DaemonSet deployed successfully!")
+	log.Println(" DaemonSet deployed successfully!")
 	return nil
 }
 
