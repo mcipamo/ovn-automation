@@ -32,11 +32,16 @@ func main() {
 		log.Fatalf("Error getting OVN nodes: %v", err)
 	}
 
+	commands := []string{
+		"rm -f /host/var/lib/ovn-ic/etc/ovn*.db",
+		"chroot /host /bin/bash -c 'systemctl restart ovs-vswitchd ovsdb-server'",
+	}
+
 	for _, node := range nodes {
 		log.Printf("Processing node: %s", node.Name)
 
-		if err := cleanOVNDBAndRestartServices(kubeClient, node.Name); err != nil {
-			log.Printf("Error cleaning OVN DB in %s: %v", node.Name, err)
+		if err := executeCommandOnNode(kubeClient, node.Name, commands); err != nil {
+			log.Printf("Error executing command on node: %v", err)
 			continue
 		}
 
@@ -70,23 +75,24 @@ func getNodesRunningOVN(kubeClient client.Client) ([]corev1.Node, error) {
 	return nodeList.Items, nil
 }
 
-func cleanOVNDBAndRestartServices(kubeClient client.Client, nodeName string) error {
-	log.Printf("Cleaning OVN DB in node %s...", nodeName)
-	cmds := []string{
-		"rm -f /var/lib/ovn-ic/etc/ovn*.db",
-		"systemctl restart ovs-vswitchd ovsdb-server",
-	}
-	return executeCommandOnNode(kubeClient, nodeName, cmds)
-}
-
 func deleteOVNKubeNodePod(kubeClient client.Client, nodeName string) error {
 	log.Printf("Deleting ovnkube-node pod on node %s...", nodeName)
-	return kubeClient.Delete(context.TODO(), &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "openshift-ovn-kubernetes",
-			Labels:    map[string]string{"app": "ovnkube-node"},
-		},
-	})
+
+	var podList corev1.PodList
+	err := kubeClient.List(context.TODO(), &podList, client.InNamespace("openshift-ovn-kubernetes"), client.MatchingLabels{"app": "ovnkube-node"})
+	if err != nil {
+		return fmt.Errorf("error listing ovnkube-node pods: %w", err)
+	}
+
+	for _, pod := range podList.Items {
+		if pod.Spec.NodeName == nodeName {
+			if err := kubeClient.Delete(context.TODO(), &pod); err != nil {
+				return fmt.Errorf("failed to delete pod %s on node %s: %w", pod.Name, nodeName, err)
+			}
+			log.Printf("Deleted pod %s on node %s", pod.Name, nodeName)
+		}
+	}
+	return nil
 }
 
 func waitForPodRecreation(kubeClient client.Client, nodeName string) error {
@@ -97,7 +103,57 @@ func waitForPodRecreation(kubeClient client.Client, nodeName string) error {
 
 func executeCommandOnNode(kubeClient client.Client, nodeName string, commands []string) error {
 	log.Printf("Executing commands on node %s", nodeName)
-	// Here the remote execution commands
-	time.Sleep(2 * time.Second)
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: "ovn-reset-",
+			Namespace:    "default",
+		},
+		Spec: corev1.PodSpec{
+			HostPID:       true,
+			NodeName:      nodeName,
+			RestartPolicy: corev1.RestartPolicyNever,
+			Containers: []corev1.Container{
+				{
+					Name:  "ovn-reset",
+					Image: "registry.redhat.io/ubi9/ubi:latest",
+					SecurityContext: &corev1.SecurityContext{
+						Privileged: func(b bool) *bool { return &b }(true),
+					},
+					Command: []string{"/bin/bash", "-c", commands[0] + " && " + commands[1]},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "host-root",
+							MountPath: "/host",
+						},
+					},
+				},
+			},
+			Volumes: []corev1.Volume{
+				{
+					Name: "host-root",
+					VolumeSource: corev1.VolumeSource{
+						HostPath: &corev1.HostPathVolumeSource{
+							Path: "/",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if err := kubeClient.Create(context.TODO(), pod); err != nil {
+		return fmt.Errorf("failed to create pod on node %s: %w", nodeName, err)
+	}
+
+	log.Printf("Pod created on node %s, waiting for execution...", nodeName)
+
+	time.Sleep(30 * time.Second)
+
+	if err := kubeClient.Delete(context.TODO(), pod); err != nil {
+		log.Printf("Error deleting pod on node %s: %v", nodeName, err)
+	}
+
+	log.Printf("Pod deleted on node %s", nodeName)
 	return nil
 }
