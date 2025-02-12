@@ -50,7 +50,7 @@ func main() {
 			continue
 		}
 	}
-	log.Println("✅ OVN database reset successfully completed!")
+	log.Println("OVN database reset successfully completed!")
 }
 
 func createKubeClient(clusterID, reason string) (client.Client, error) {
